@@ -79,7 +79,7 @@ uint8_t databusPins[8] = {
 #define CELL_WIDTH      8
 #define CELL_HEIGHT     8
 
-#define RANDOM_FLIP_MILLIS 100
+#define RANDOM_FLIP_MILLIS 4
 
 volatile int whites = (SCR_CELL_WIDTH / 2) * SCR_CELL_HEIGHT;
 volatile int blacks = (SCR_CELL_WIDTH / 2) * SCR_CELL_HEIGHT;
@@ -186,10 +186,12 @@ void sendAddress(uint8_t command, int addressStart, int addressEnd)
 
 void setDataBusState(uint8_t state)
 {
-  for (int i = 0; i < 8; i++)
+  DDRD = (state == OUTPUT) ? (DDRD | 0b00001111) : (DDRD & 0b11110000);
+  DDRF = (state == OUTPUT) ? (DDRF | 0b11110000) : (DDRF & 0b00001111);
+/*  for (int i = 0; i < 8; i++)
   {
       pinMode(databusPins[i], state);
-  }
+  } */
 }
 
 void setDataBusInput()
@@ -238,17 +240,20 @@ void setILICtrlHigh()
 
 void setILIRs(uint8_t state)
 {
-  digitalWrite(PIN_ILI_RS, state);
+//  digitalWrite(PIN_ILI_RS, state);
+  PORTE = (state == LOW) ? (PORTE & ~bit(PORTE6)) : (PORTE | bit(PORTE6));
 }
 
 void setILIRd(uint8_t state)
 {
-  digitalWrite(PIN_ILI_RD, state);
+//  digitalWrite(PIN_ILI_RD, state);
+  PORTD = (state == LOW) ? (PORTD & ~bit(PORTD7)) : (PORTD | bit(PORTD7));
 }
 
 void setILIWr(uint8_t state)
 {
-  digitalWrite(PIN_ILI_WR, state);
+//  digitalWrite(PIN_ILI_WR, state);
+  PORTC = (state == LOW) ? (PORTC & ~bit(PORTC6)) : (PORTC | bit(PORTC6));
 }
 
 void toggleILIWr()
@@ -267,11 +272,13 @@ void resetILI()
 void setDataBus(uint8_t data)
 {
   setDataBusOutput();
-  for (int i = 0; i < 8; i++)
+  PORTF = ((PORTF & 0b11110000) ^ PORTF) | (data << 4);
+  PORTD = ((PORTD & 0b00001111) ^ PORTD) | (data >> 4);
+/*  for (int i = 0; i < 8; i++)
   {
     digitalWrite(databusPins[i], (data & 1));
     data = data >> 1;
-  }
+  } */
 }
 
 uint8_t readDataBus()
