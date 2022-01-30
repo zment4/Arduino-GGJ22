@@ -107,6 +107,13 @@ void setup() {
 
   resetILI();
 
+  setupILI();
+
+  lastRandomTurnMillis = millis();
+}
+
+void setupILI()
+{
   // wait 120ms after reset before sending sleep out (as per datasheet)
   delay(120);
   sendILICommand(ILI_CMD_SLEEPOUT);
@@ -131,13 +138,10 @@ void setup() {
   {
     for (int x = 0; x < SCR_CELL_WIDTH; x++)
     {
-//      framebuffer[SCR_CELL_WIDTH*y+x] = fast_rand() & 1 == 1 ? 0xff : 0;
       framebuffer[SCR_CELL_WIDTH*y+x] = x < SCR_CELL_WIDTH / 2 ? 0xff : 0;
     }
   }
-  writeFrameBuffer();
-
-  lastRandomTurnMillis = millis();
+  writeFrameBuffer();  
 }
 
 void writeFrameBuffer()
