@@ -1,6 +1,7 @@
 // Arduino Pro Micro
 
 #include "fastrand.h"
+#include "chargen.h"
 
 // RS, WR, RD, RST
 #define PIN_ILI_RS   7
@@ -61,6 +62,7 @@ void setDataBusOutput();
 void setDataBusInput();
 void setDataBus(uint8_t data);
 uint8_t readDataBus();
+void writeCharToScreen(uint8_t cx, uint8_t cy, char character);
 
 uint8_t databusPins[8] = {
   PIN_ILI_DB10,
@@ -79,12 +81,14 @@ uint8_t databusPins[8] = {
 #define CELL_WIDTH      8
 #define CELL_HEIGHT     8
 
-#define RANDOM_FLIP_MILLIS 4
+#define RANDOM_FLIP_MICROS 400
 
 volatile int whites = (SCR_CELL_WIDTH / 2) * SCR_CELL_HEIGHT;
 volatile int blacks = (SCR_CELL_WIDTH / 2) * SCR_CELL_HEIGHT;
 volatile uint8_t framebuffer[SCR_CELL_WIDTH * SCR_CELL_HEIGHT] = {0};
-volatile uint32_t lastRandomTurnMillis = 0;
+volatile uint32_t lastRandomTurnMicros = 0;
+uint32_t randomTurnDelays[] = { RANDOM_FLIP_MICROS, RANDOM_FLIP_MICROS / 2, RANDOM_FLIP_MICROS / 4 };
+int randomTurnThresholds[] = { 600, 750, 1000 };
 
 void setup() {
   // put your setup code here, to run once:
@@ -109,7 +113,7 @@ void setup() {
 
   setupILI();
 
-  lastRandomTurnMillis = millis();
+  lastRandomTurnMicros = micros();
 }
 
 void setupILI()
@@ -138,29 +142,31 @@ void setupILI()
   {
     for (int x = 0; x < SCR_CELL_WIDTH; x++)
     {
-      framebuffer[SCR_CELL_WIDTH*y+x] = x < SCR_CELL_WIDTH / 2 ? 0xff : 0;
+      framebuffer[SCR_CELL_WIDTH*y+x] = x < SCR_CELL_WIDTH / 2 ? 0xDB : 0xff;
     }
-  }
+  } 
+
+/*  uint8_t index = 0;
+  for (int y = 0; y < SCR_CELL_HEIGHT; y++)
+  {
+    for (int x = 0; x < SCR_CELL_WIDTH; x++, index++)
+    {
+      framebuffer[SCR_CELL_WIDTH*y+x] = index;
+    }
+  } */
   writeFrameBuffer();  
 }
 
 void writeFrameBuffer()
 {
-  for (uint8_t cy = 0; cy < SCR_CELL_HEIGHT; cy++)
+  uint16_t offset = 0;
+  uint16_t sy = 0;
+  for (uint8_t cy = 0; cy < SCR_CELL_HEIGHT; cy++, sy += CELL_HEIGHT)
   {
-    for (uint8_t cx = 0; cx < SCR_CELL_WIDTH; cx++)
+    uint16_t sx = 0;
+    for (uint8_t cx = 0; cx < SCR_CELL_WIDTH; cx++, offset++, sx += CELL_WIDTH)
     {
-      sendColumnAddress(CELL_WIDTH*cx, CELL_WIDTH*cx+CELL_WIDTH-1);
-      sendPageAddress(CELL_HEIGHT*cy, CELL_HEIGHT*cy+CELL_HEIGHT-1);
-      sendILICommand(ILI_CMD_MEMORYWRITE);
-      for (uint8_t pxl = 0; pxl < CELL_WIDTH * CELL_HEIGHT; pxl++)
-      {
-        int offset = SCR_CELL_WIDTH*cy+cx;
-        
-        writeILIByte(framebuffer[offset]);
-        writeILIByte(framebuffer[offset]);
-        writeILIByte(framebuffer[offset]);
-      }
+      writeCharToScreen(cx, cy, framebuffer[offset]);
     }
   }
 }
@@ -303,11 +309,11 @@ void turn_white(int index)
   {
     for (uint8_t cx = 0; cx < SCR_CELL_WIDTH; cx++, framebufferOffset++)
     {
-      if (framebuffer[framebufferOffset] == 0)
+      if (framebuffer[framebufferOffset] == 0xff)
       {
         if (count == index)
         {
-          framebuffer[framebufferOffset] = 0xff;
+          framebuffer[framebufferOffset] = 0xdb;
           whites++;
           blacks--;
           sendColumnAddress(CELL_WIDTH*cx, CELL_WIDTH*cx+CELL_WIDTH-1);
@@ -315,9 +321,9 @@ void turn_white(int index)
           sendILICommand(ILI_CMD_MEMORYWRITE);
           for (uint8_t pxl = 0; pxl < CELL_WIDTH * CELL_HEIGHT; pxl++)
           {
-            writeILIByte(framebuffer[framebufferOffset]);
-            writeILIByte(framebuffer[framebufferOffset]);
-            writeILIByte(framebuffer[framebufferOffset]);
+            writeILIByte(0xff);
+            writeILIByte(0xff);
+            writeILIByte(0xff);
           }
           return;
         }
@@ -335,11 +341,11 @@ void turn_black(int index)
   {
     for (uint8_t cx = 0; cx < SCR_CELL_WIDTH; cx++, framebufferOffset++)
     {
-      if (framebuffer[framebufferOffset] == 0xff)
+      if (framebuffer[framebufferOffset] == 0xdb)
       {
         if (count == index)
         {
-          framebuffer[framebufferOffset] = 0;
+          framebuffer[framebufferOffset] = 0xff;
           blacks++;
           whites--;
           sendColumnAddress(CELL_WIDTH*cx, CELL_WIDTH*cx+CELL_WIDTH-1);
@@ -347,9 +353,9 @@ void turn_black(int index)
           sendILICommand(ILI_CMD_MEMORYWRITE);
           for (uint8_t pxl = 0; pxl < CELL_WIDTH * CELL_HEIGHT; pxl++)
           {
-            writeILIByte(framebuffer[framebufferOffset]);
-            writeILIByte(framebuffer[framebufferOffset]);
-            writeILIByte(framebuffer[framebufferOffset]);
+            writeILIByte(0);
+            writeILIByte(0);
+            writeILIByte(0);
           }
           return;
         }
@@ -358,9 +364,6 @@ void turn_black(int index)
     }
   }
 }
-
-uint32_t randomTurnDelays[] = { RANDOM_FLIP_MILLIS, RANDOM_FLIP_MILLIS / 2, RANDOM_FLIP_MILLIS / 4 };
-int randomTurnThresholds[] = { 600, 750, 1000 };
 
 uint32_t getRandomTurnDelay()
 {
@@ -376,18 +379,66 @@ uint32_t getRandomTurnDelay()
   return turnDelay;
 }
 
-void loop() {
-  uint32_t currentMillis = millis();
-  uint32_t randomTurnDelay = getRandomTurnDelay();
-  if ((currentMillis - lastRandomTurnMillis) > randomTurnDelay)
+void writeCharToScreen(uint8_t cx, uint8_t cy, char character)
+{
+  uint16_t sx = cx << 3;
+  uint16_t sy = cy << 3;
+  
+  sendColumnAddress(sx, sx+CELL_WIDTH-1);
+  sendPageAddress(sy, sy+CELL_HEIGHT-1);
+  sendILICommand(ILI_CMD_MEMORYWRITE);
+  void *charOffset = &chargen[((uint8_t) character) << 3];
+  
+  for (register uint8_t row = 0; row < CELL_HEIGHT; row++, charOffset++)
   {
-    float value = blacks / (float) (SCR_CELL_WIDTH * SCR_CELL_HEIGHT);
-    float randVal = random(0, SCR_CELL_WIDTH * SCR_CELL_HEIGHT) / (float) (SCR_CELL_WIDTH * SCR_CELL_HEIGHT);
+    register uint8_t charByte = pgm_read_byte(charOffset);
+    for (register uint8_t bitIndex = 0; bitIndex < 8; bitIndex++)
+    {
+      register uint8_t outputByte = ((charByte & 0b10000000) == 0) ? 0 : 0xff;
+      writeILIByte(outputByte);
+      writeILIByte(outputByte);
+      writeILIByte(outputByte);
+      charByte = charByte << 1;
+    }
+  }  
+}
+
+void writeStringToScreen(uint8_t x, uint8_t y, char *str)
+{
+  for (uint8_t i = 0; i < strlen(str); i++, x++)
+  {
+    writeCharToScreen(x, y, str[i]);
+  }
+}
+
+bool gameOver = false;
+
+int fullCount = (SCR_CELL_WIDTH * SCR_CELL_HEIGHT);
+void loop() {
+  if (gameOver) return;
+  
+  uint32_t currentMicros = micros();
+  uint32_t randomTurnDelay = getRandomTurnDelay();
+  if ((currentMicros - lastRandomTurnMicros) > randomTurnDelay)
+  {
+    float value = blacks / (float) fullCount;
+    float randVal = random(0, fullCount) / (float) (fullCount);
     if (randVal > value) turn_white(random(0, blacks));
     else turn_black(random(0, whites));
     
-    lastRandomTurnMillis += randomTurnDelay;
+    lastRandomTurnMicros = currentMicros;
   } 
+
+  if (blacks == 1200 || whites == 1200)
+  {
+    char secondsSurvivedStr[27] = {0};
+    sprintf(secondsSurvivedStr, "You survived %d seconds!", millis() / 1000);
+    
+    gameOver = true;
+    writeStringToScreen(SCR_CELL_WIDTH / 2 - 5, 13, "Game Over");
+    writeStringToScreen(SCR_CELL_WIDTH / 2 - strlen(secondsSurvivedStr) / 2, 15, secondsSurvivedStr);
+    return; 
+  }
   
   currentButtonState[0] = digitalRead(PIN_BUTTON1);
   currentButtonState[1] = digitalRead(PIN_BUTTON2);
