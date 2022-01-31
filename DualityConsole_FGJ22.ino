@@ -88,7 +88,8 @@ volatile int blacks = (SCR_CELL_WIDTH / 2) * SCR_CELL_HEIGHT;
 volatile uint8_t framebuffer[SCR_CELL_WIDTH * SCR_CELL_HEIGHT] = {0};
 volatile uint32_t lastRandomTurnMicros = 0;
 uint32_t randomTurnDelays[] = { RANDOM_FLIP_MICROS, RANDOM_FLIP_MICROS / 2, RANDOM_FLIP_MICROS / 4 };
-int randomTurnThresholds[] = { 600, 750, 1000 };
+int randomTurnThresholds[] = { 600, 750, 850 };
+int randomTurnAmounts[] = { 2, 8, 16 };
 
 void setup() {
   // put your setup code here, to run once:
@@ -379,6 +380,20 @@ uint32_t getRandomTurnDelay()
   return turnDelay;
 }
 
+int getRandomTurnAmount()
+{
+  int maxCols = max(whites, blacks);
+  int turnAmount = randomTurnAmounts[0];
+  
+  if (maxCols > randomTurnThresholds[1])
+    turnAmount = randomTurnAmounts[1];
+    
+  if (maxCols > randomTurnThresholds[2])
+    turnAmount = randomTurnAmounts[2];
+
+  return turnAmount * ((millis() / 10000) + 1);
+}
+
 void writeCharToScreen(uint8_t cx, uint8_t cy, char character)
 {
   uint16_t sx = cx << 3;
@@ -414,21 +429,26 @@ void writeStringToScreen(uint8_t x, uint8_t y, char *str)
 bool gameOver = false;
 
 int fullCount = (SCR_CELL_WIDTH * SCR_CELL_HEIGHT);
-void loop() {
-  if (gameOver) return;
-  
-  uint32_t currentMicros = micros();
-  uint32_t randomTurnDelay = getRandomTurnDelay();
-  if ((currentMicros - lastRandomTurnMicros) > randomTurnDelay)
-  {
-    float value = blacks / (float) fullCount;
-    float randVal = random(0, fullCount) / (float) (fullCount);
-    if (randVal > value) turn_white(random(0, blacks));
-    else turn_black(random(0, whites));
-    
-    lastRandomTurnMicros = currentMicros;
-  } 
 
+void handleRandomTurn(int turnAmount)
+{
+  uint32_t currentMicros = micros();
+/*  uint32_t randomTurnDelay = getRandomTurnDelay();
+  if ((currentMicros - lastRandomTurnMicros) > randomTurnDelay)
+  {*/
+    for (int i = 0; i < turnAmount; i++)
+    {
+      float value = blacks / (float) fullCount;
+      float randVal = random(0, fullCount) / (float) (fullCount);
+      if (randVal > value) turn_white(random(0, blacks));
+      else turn_black(random(0, whites));
+    }    
+/*    lastRandomTurnMicros = currentMicros;
+  }  */
+}
+
+bool handleLose()
+{
   if (blacks == 1200 || whites == 1200)
   {
     char secondsSurvivedStr[27] = {0};
@@ -437,21 +457,54 @@ void loop() {
     gameOver = true;
     writeStringToScreen(SCR_CELL_WIDTH / 2 - 5, 13, "Game Over");
     writeStringToScreen(SCR_CELL_WIDTH / 2 - strlen(secondsSurvivedStr) / 2, 15, secondsSurvivedStr);
-    return; 
   }
   
-  currentButtonState[0] = digitalRead(PIN_BUTTON1);
-  currentButtonState[1] = digitalRead(PIN_BUTTON2);
+  return gameOver; 
+}
+
+uint32_t buttonAmount = 0;
+
+void handleInput(int turnAmount)
+{
+  currentButtonState[0] = (PINB & 0b00100000) > 0 ? HIGH : LOW;
+  currentButtonState[1] = (PINB & 0b01000000) > 0 ? HIGH : LOW;
+
+  if ((currentButtonState[0] != lastButtonState[0] && currentButtonState[0] == LOW) ||
+      (currentButtonState[1] != lastButtonState[1] && currentButtonState[1] == LOW))
+  {
+    buttonAmount = turnAmount;  
+  }
+
+  buttonAmount = buttonAmount * 2;
   
   if (currentButtonState[0] == LOW)
   {
-    turn_black(random(0, whites));
+    for (uint32_t i = 0; i < buttonAmount; i++)
+    {
+      turn_black(random(0, whites));
+    }
   }
+  
   if (currentButtonState[1] == LOW)
   {
-    turn_white(random(0, blacks));
+    for (uint32_t i = 0; i < buttonAmount; i++)
+    {
+      turn_white(random(0, blacks));
+    }
   }
       
   lastButtonState[0] = currentButtonState[0];
   lastButtonState[1] = currentButtonState[1];
+}
+
+void loop() {
+  if (gameOver) return;
+
+  int turnAmount = getRandomTurnAmount();
+
+  handleRandomTurn(turnAmount);
+
+  if (handleLose()) return;
+
+  handleInput(turnAmount);
 }
